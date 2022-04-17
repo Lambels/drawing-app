@@ -10,7 +10,6 @@ import (
 type User struct {
 	Id    int64  `json:"id"`
 	Color string `json:"color"` // hex value.
-	Width int    `json:"width"`
 
 	commSend chan<- *Message // communicate with hub.
 	conn     *websocket.Conn // communicate with client.
@@ -36,6 +35,7 @@ func (u *User) readPump() {
 			}
 			break
 		}
+		msg.Data["sender"] = u.Id
 
 		u.commSend <- msg
 	}
@@ -43,8 +43,8 @@ func (u *User) readPump() {
 
 // write attempts to write msg to u.conn, if an error occurs the connection
 // will get closed.
-func (u *User) write(msg *Message) {
-	if err := u.conn.WriteJSON(msg); err != nil {
+func (u *User) write(msg []byte) {
+	if err := u.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 		u.conn.Close()
 	}
 }
