@@ -11,7 +11,7 @@ type User struct {
 	Id    int64  `json:"id"`
 	Color string `json:"color"` // hex value.
 
-	commSend chan<- *Message // communicate with hub.
+	commSend chan<- Message  // communicate with hub.
 	conn     *websocket.Conn // communicate with client.
 }
 
@@ -28,14 +28,13 @@ func (u *User) readPump() {
 	}()
 
 	for {
-		var msg *Message
-		if err := u.conn.ReadJSON(msg); err != nil {
+		var msg Message
+		if err := u.conn.ReadJSON(&msg); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("readPump: unexpected error: %v", err)
 			}
 			break
 		}
-		msg.Data["sender"] = u.Id
 
 		u.commSend <- msg
 	}
