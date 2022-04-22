@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -12,33 +13,38 @@ type DrawingHub struct {
 
 	colors map[string]int64
 	users  map[int64]*User
-	read   chan *Message
+	read   chan Message
 }
 
 func (h *DrawingHub) Open() {
+	log.Println("Hub started listening")
 	go h.listen()
 }
 
 func (h *DrawingHub) Close() {
-	h.read <- &Message{Type: TypeClose}
+	h.read <- newCloseMessage()
 }
 
 func (h *DrawingHub) listen() {
 	for {
 		select {
 		case msg := <-h.read:
-			switch msg.Type {
+			switch msg.Kind() {
 			case TypeUserJoined:
 				h.idCount++
+				log.Printf("User: %d joined", h.idCount)
 
 				// generate unique color.
 				color := genRandomColorHex()
-				for _, ok := h.colors[color]; !ok; {
+				_, ok := h.colors[color]
+				for ok {
 					color = genRandomColorHex()
+					_, ok = h.colors[color]
 				}
 
 				// populate user.
-				user := msg.Data[TypeUserJoined].(*User)
+				pMsg := msg.(*MessageUserJoined)
+				user := pMsg.User
 				user.Id = h.idCount
 				user.Color = color
 				user.commSend = h.read
@@ -47,28 +53,36 @@ func (h *DrawingHub) listen() {
 				h.users[user.Id] = user
 				h.colors[color] = user.Id
 
+				// notify client side of their color and id.
+				msg := newFirstMessage(user.Id, user.Color)
+				payload, _ := json.Marshal(msg)
+				user.write(payload)
+
 				// start user.
 				go user.Start()
 
 			case TypeUserLeft:
-				userId := msg.Data[TypeUserLeft].(int64)
+				pMsg := msg.(*MessageUserLeft)
+				userId := pMsg.Id
 				user := h.users[userId]
+				log.Printf("User: %d is leaving\n", userId)
 
 				delete(h.users, userId)
 				delete(h.colors, user.Color)
 
 			case TypeClose:
+				log.Println("Hub is closing")
 				h.closeAll()
 				return
 
 			default:
-				h.broadcast(msg, msg.Data["sender"].(int64))
+				h.broadcast(msg, msg.SenderId())
 			}
 		}
 	}
 }
 
-func (h *DrawingHub) broadcast(msg *Message, sender int64) {
+func (h *DrawingHub) broadcast(msg Message, sender int64) {
 	payload, _ := json.Marshal(msg)
 	for _, user := range h.users {
 		if user.Id != sender {
