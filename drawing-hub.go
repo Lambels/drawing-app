@@ -76,6 +76,7 @@ func (h *DrawingHub) listen() {
 				return
 
 			default:
+				log.Printf("Got Message: %d From user: %d", msg.Kind(), msg.SenderId())
 				h.broadcast(msg, msg.SenderId())
 			}
 		}
