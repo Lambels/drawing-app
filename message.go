@@ -9,6 +9,9 @@ const (
 	TypeClear
 	TypeDraw
 	TypeClose
+	TypePoint
+	TypePointStart
+	TypePointEnd
 )
 
 type Message interface {
@@ -94,4 +97,20 @@ func newCloseMessage() Message {
 	return &MessageUserFirst{
 		Type: TypeClose,
 	}
+}
+
+type MessagePoint struct {
+	Type  MessageType `json:"type"`
+	Id    int64       `json:"id"`
+	Color string      `json:"color"`
+	X     int         `json:"x"`
+	Y     int         `json:"y"`
+}
+
+func (m *MessagePoint) Kind() MessageType {
+	return m.Type
+}
+
+func (m *MessagePoint) SenderId() int64 {
+	return m.Id
 }
