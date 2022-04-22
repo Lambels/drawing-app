@@ -27,7 +27,7 @@ func NewServer(port string) *Server {
 		hub: &DrawingHub{
 			colors: make(map[string]int64),
 			users:  make(map[int64]*User),
-			read:   make(chan *Message),
+			read:   make(chan Message),
 		},
 	}
 }
@@ -35,9 +35,9 @@ func NewServer(port string) *Server {
 func (s *Server) Open() {
 	s.hub.Open()
 
-	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/ws", s.handleWebsocket)
 
+	log.Printf("Starting server at %s\n", s.server.Addr)
 	if err := s.server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
@@ -48,6 +48,7 @@ func (s *Server) Close() error {
 
 	cancelCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	log.Println("Server shutting down gracefully")
 	return s.server.Shutdown(cancelCtx)
 }
 
@@ -63,8 +64,4 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.hub.read <- newJoinMessage(user)
-}
-
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-
 }
