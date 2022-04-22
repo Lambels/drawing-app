@@ -28,7 +28,7 @@ func (u *User) readPump() {
 	}()
 
 	for {
-		var msg Message
+		var msg MessagePoint
 		if err := u.conn.ReadJSON(&msg); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("readPump: unexpected error: %v", err)
@@ -36,7 +36,7 @@ func (u *User) readPump() {
 			break
 		}
 
-		u.commSend <- msg
+		u.commSend <- &msg
 	}
 }
 
