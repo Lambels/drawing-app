@@ -60,9 +60,10 @@ func newLeaveMessage(id int64) Message {
 }
 
 type MessageUserFirst struct {
-	Type  MessageType `json:"type"`
-	Id    int64       `json:"id"`
-	Color string      `json:"color"`
+	Type       MessageType `json:"type"`
+	Id         int64       `json:"id"`
+	Color      string      `json:"color"`
+	PastPoints []Message   `json:"pastPoints"`
 }
 
 func (m *MessageUserFirst) Kind() MessageType {
@@ -73,11 +74,12 @@ func (m *MessageUserFirst) SenderId() int64 {
 	return m.Id
 }
 
-func newFirstMessage(id int64, color string) Message {
+func newFirstMessage(id int64, color string, pastPoints []Message) Message {
 	return &MessageUserFirst{
-		Type:  TypeUserFirst,
-		Id:    id,
-		Color: color,
+		Type:       TypeUserFirst,
+		Id:         id,
+		Color:      color,
+		PastPoints: pastPoints,
 	}
 }
 
