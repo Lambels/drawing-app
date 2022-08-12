@@ -4,9 +4,9 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/multierr"
 )
 
 var upgrader = websocket.Upgrader{
@@ -18,16 +18,18 @@ type Server struct {
 	hub    *DrawingHub
 }
 
-func NewServer(port string) *Server {
+func NewServer(port string, bufCap int) *Server {
 	return &Server{
 		server: &http.Server{
 			Addr:    port,
 			Handler: nil,
 		},
 		hub: &DrawingHub{
-			colors: make(map[string]int64),
-			users:  make(map[int64]*User),
-			read:   make(chan Message),
+			close:   make(chan error, 1),
+			dataBuf: make([]Message, bufCap),
+			colors:  make(map[string]int64),
+			users:   make(map[int64]*User),
+			read:    make(chan Message),
 		},
 	}
 }
@@ -43,13 +45,13 @@ func (s *Server) Open() {
 	}
 }
 
-func (s *Server) Close() error {
-	s.hub.Close()
+func (s *Server) Close(ctx context.Context) error {
+	log.Println("Server and Hub shutting down gracefully")
 
-	cancelCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	log.Println("Server shutting down gracefully")
-	return s.server.Shutdown(cancelCtx)
+	return multierr.Combine(
+		s.hub.Close(ctx),
+		s.server.Shutdown(ctx),
+	)
 }
 
 func (s *Server) handleWebsocket(w http.ResponseWriter, r *http.Request) {
