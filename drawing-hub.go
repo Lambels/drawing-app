@@ -1,19 +1,25 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
 	"time"
+
+	"go.uber.org/multierr"
 )
 
 type DrawingHub struct {
 	idCount int64
 
-	colors map[string]int64
-	users  map[int64]*User
-	read   chan Message
+	lastX   int
+	dataBuf []Message
+	colors  map[string]int64
+	users   map[int64]*User
+	read    chan Message
+	close   chan error
 }
 
 func (h *DrawingHub) Open() {
@@ -21,66 +27,83 @@ func (h *DrawingHub) Open() {
 	go h.listen()
 }
 
-func (h *DrawingHub) Close() {
-	h.read <- newCloseMessage()
+func (h *DrawingHub) Close(ctx context.Context) error {
+	close(h.read)
+
+	select {
+	case err := <-h.close:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (h *DrawingHub) listen() {
-	for {
-		select {
-		case msg := <-h.read:
-			switch msg.Kind() {
-			case TypeUserJoined:
-				h.idCount++
-				log.Printf("User: %d joined", h.idCount)
+	defer func() {
+		log.Println("Hub is closing")
+		h.close <- h.closeAll()
+	}()
 
-				// generate unique color.
-				color := genRandomColorHex()
-				_, ok := h.colors[color]
-				for ok {
-					color = genRandomColorHex()
-					_, ok = h.colors[color]
-				}
+	for msg := range h.read {
+		switch msg.Kind() {
+		case TypeUserJoined:
+			h.idCount++
+			log.Printf("User: %d joined", h.idCount)
 
-				// populate user.
-				pMsg := msg.(*MessageUserJoined)
-				user := pMsg.User
-				user.Id = h.idCount
-				user.Color = color
-				user.commSend = h.read
-
-				// add user to hub.
-				h.users[user.Id] = user
-				h.colors[color] = user.Id
-
-				// notify client side of their color and id.
-				msg := newFirstMessage(user.Id, user.Color)
-				payload, _ := json.Marshal(msg)
-				user.write(payload)
-
-				// start user.
-				go user.Start()
-
-			case TypeUserLeft:
-				pMsg := msg.(*MessageUserLeft)
-				userId := pMsg.Id
-				user := h.users[userId]
-				log.Printf("User: %d is leaving\n", userId)
-
-				delete(h.users, userId)
-				delete(h.colors, user.Color)
-
-			case TypeClose:
-				log.Println("Hub is closing")
-				h.closeAll()
-				return
-
-			default:
-				log.Printf("Got Message: %d From user: %d", msg.Kind(), msg.SenderId())
-				h.broadcast(msg, msg.SenderId())
+			// generate unique color.
+			color := genRandomColorHex()
+			_, ok := h.colors[color]
+			for ok {
+				color = genRandomColorHex()
+				_, ok = h.colors[color]
 			}
+
+			// populate user.
+			pMsg := msg.(*MessageUserJoined)
+			user := pMsg.User
+			user.Id = h.idCount
+			user.Color = color
+			user.commSend = h.read
+
+			// add user to hub.
+			h.users[user.Id] = user
+			h.colors[color] = user.Id
+
+			// notify client side of their color and id.
+			msg := newFirstMessage(user.Id, user.Color, h.dataBuf)
+			payload, _ := json.Marshal(msg)
+			user.write(payload)
+
+			// start user.
+			user.Start()
+
+		case TypeUserLeft:
+			pMsg := msg.(*MessageUserLeft)
+			userId := pMsg.Id
+			user := h.users[userId]
+			log.Printf("User: %d is leaving\n", userId)
+
+			delete(h.users, userId)
+			delete(h.colors, user.Color)
+
+		case TypePointStart, TypePoint, TypePointEnd:
+			log.Printf("Drawing: %d From user: %d", msg.Kind(), msg.SenderId())
+			h.saveMessage(msg)
+			h.broadcast(msg, msg.SenderId())
 		}
 	}
+}
+
+func (h *DrawingHub) saveMessage(msg Message) {
+	if msg.Kind() != TypeDraw {
+		return
+	}
+
+	if h.lastX == cap(h.dataBuf) {
+		h.lastX = 0
+	}
+	h.dataBuf[h.lastX] = msg
+	h.lastX++
 }
 
 func (h *DrawingHub) broadcast(msg Message, sender int64) {
@@ -92,10 +115,15 @@ func (h *DrawingHub) broadcast(msg Message, sender int64) {
 	}
 }
 
-func (h *DrawingHub) closeAll() {
+func (h *DrawingHub) closeAll() error {
+	var err error
 	for _, user := range h.users {
-		user.conn.Close()
+		if err := user.conn.Close(); err != nil {
+			multierr.AppendInto(&err, err)
+		}
 	}
+
+	return err
 }
 
 func genRandomColorHex() string {
