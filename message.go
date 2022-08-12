@@ -83,24 +83,6 @@ func newFirstMessage(id int64, color string, pastPoints []Message) Message {
 	}
 }
 
-type MessageClose struct {
-	Type MessageType `json:"type"`
-}
-
-func (m *MessageClose) Kind() MessageType {
-	return m.Type
-}
-
-func (m *MessageClose) SenderId() int64 {
-	return -1
-}
-
-func newCloseMessage() Message {
-	return &MessageUserFirst{
-		Type: TypeClose,
-	}
-}
-
 type MessagePoint struct {
 	Type  MessageType `json:"type"`
 	Id    int64       `json:"id"`
